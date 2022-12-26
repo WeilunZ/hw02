@@ -1,35 +1,34 @@
 /* 基于智能指针实现双向链表 */
 #include <cstdio>
 #include <memory>
+#include <stdexcept>
 
+template<typename T>
 struct Node {
     // 这两个指针会造成什么问题？请修复
-    std::shared_ptr<Node> next;
-    std::shared_ptr<Node> prev;
+    std::unique_ptr<Node> next;
+    Node<T> *prev;
     // 如果能改成 unique_ptr 就更好了!
 
-    int value;
+    T value;
 
-    // 这个构造函数有什么可以改进的？
-    Node(int val) {
-        value = val;
-    }
+    // 这个构造函数有什么可以改进的？答：列表初始化
+    Node(T val): next(nullptr), prev(nullptr), value(val) {}
 
-    void insert(int val) {
-        auto node = std::make_shared<Node>(val);
-        node->next = next;
-        node->prev = prev;
-        if (prev)
-            prev->next = node;
-        if (next)
-            next->prev = node;
+    void insert(T val) {
+		std::unique_ptr<Node<T>> node = std::make_unique<Node<T>>(val);
+		if (next)
+			next->prev=node.get();
+		node->next=std::move(next);
+		node->prev=this;
+		next=std::move(node);
     }
 
     void erase() {
-        if (prev)
-            prev->next = next;
         if (next)
             next->prev = prev;
+		if (prev != nullptr)
+			prev->next = std::move(next);
     }
 
     ~Node() {
@@ -37,59 +36,75 @@ struct Node {
     }
 };
 
+template<typename T>
 struct List {
-    std::shared_ptr<Node> head;
+    std::unique_ptr<Node<T>> head;
 
     List() = default;
 
-    List(List const &other) {
+    List(List<T> const &other) {
         printf("List 被拷贝！\n");
-        head = other.head;  // 这是浅拷贝！
-        // 请实现拷贝构造函数为 **深拷贝**
-    }
+		Node<T> *tmp;
+		for (Node<T>* curr = other.front(); curr != nullptr; curr = curr->next.get())
+		{
+			if (head){
+				tmp->next = std::make_unique<Node<T>>(curr->value);
+				tmp = tmp->next.get();
+			}else{
+				head = std::make_unique<Node<T>>(curr->value);
+				tmp = head.get();
+			}
+		}
+	}
 
     List &operator=(List const &) = delete;  // 为什么删除拷贝赋值函数也不出错？
 
     List(List &&) = default;
     List &operator=(List &&) = default;
 
-    Node *front() const {
+    Node<T> *front() const {
         return head.get();
     }
 
-    int pop_front() {
-        int ret = head->value;
-        head = head->next;
+    T pop_front() {
+		if (!head) throw std::out_of_range("pop_front()");
+        T ret = head->value;
+        head = std::move(head->next);
         return ret;
     }
 
     void push_front(int value) {
-        auto node = std::make_shared<Node>(value);
-        node->next = head;
-        if (head)
-            head->prev = node;
-        head = node;
-    }
+		if (!head){
+			head = std::make_unique<Node<T>>(value);
+		}else{
+			auto node = std::make_unique<Node<T>>(value);
+			head->prev=node.get();
+			node->next=std::move(head);
+			node->prev=nullptr;
+			head=std::move(node);
+		}
+	}
 
-    Node *at(size_t index) const {
+    Node<T> *at(size_t index) const {
         auto curr = front();
-        for (size_t i = 0; i < index; i++) {
+        for (size_t i = 0; curr != nullptr && i < index; i++) {
             curr = curr->next.get();
         }
         return curr;
     }
 };
 
-void print(List lst) {  // 有什么值得改进的？
+template<typename T>
+void print(const List<T> &lst) {  // 有什么值得改进的？
     printf("[");
-    for (auto curr = lst.front(); curr; curr = curr->next.get()) {
+    for (auto curr = lst.front(); curr != nullptr; curr = curr->next.get()) {
         printf(" %d", curr->value);
     }
     printf(" ]\n");
 }
 
 int main() {
-    List a;
+    List<int> a;
 
     a.push_front(7);
     a.push_front(5);
@@ -105,7 +120,7 @@ int main() {
 
     print(a);   // [ 1 4 2 8 5 7 ]
 
-    List b = a;
+    List<int> b = a;
 
     a.at(3)->erase();
 
